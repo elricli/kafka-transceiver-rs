@@ -49,12 +49,12 @@ $ cargo r -- receiver --kafka-address localhost:9092 --kafka-topic test_topic1 -
 | +-------------+ |          | +-------------+ |
 |        |        |          |        ^        |
 |        |        |          |        |        |
-|   consume msg   |          |   produce msg   |
+|    recv msg     |          |    send msg     |
 |        |        |          |        |        |
 |        v        |          |        |        |
 | +-------------+ |          | +-------------+ |
 | |             | |          | |             | |
-| | Transceiver ├--------------┤ Transceiver | |
+| |  TRX-Sender |-----http---->| TRX-Receiver| |
 | |             | |          | |             | |
 | +-------------+ |          | +-------------+ |
 |                 |          |                 |
