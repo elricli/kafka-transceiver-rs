@@ -58,19 +58,18 @@ pub struct Receiver {
     #[arg(long)]
     kafka_address: String,
 
-    #[arg(long)]
-    kafka_topic: String,
-
     #[arg(short, default_value_t = 8080)]
     port: u16,
 }
 
-const RECEIVER_RECEIVE_API: &str = "/kafka-receive";
+const RECEIVER_KAFKA_RECEIVE_API: &str = "/kafka-receive";
 
 #[derive(Serialize, Deserialize, Debug)]
-struct ReceiverAPIBody {
+struct KafkaReceiveBody {
     topic: String,
+    key: Option<String>,
     payload: String,
+    timestamp: Option<i64>,
 }
 
 impl Receiver {
@@ -86,17 +85,17 @@ impl Receiver {
         let app = Router::new()
             .route("/health", get(|| async { "OK" }))
             .route(
-                RECEIVER_RECEIVE_API,
-                put(|Json(payload): Json<ReceiverAPIBody>| async move {
-                    info!("Received message: {:?}", payload);
-                    match producer
-                        .send(
-                            FutureRecord::<str, str>::to(&payload.topic)
-                                .payload(payload.payload.as_str()),
-                            Duration::from_secs(0),
-                        )
-                        .await
-                    {
+                RECEIVER_KAFKA_RECEIVE_API,
+                put(|Json(body): Json<KafkaReceiveBody>| async move {
+                    info!("Received message: {:?}", body);
+                    let mut record = FutureRecord::to(&body.topic).payload(&body.payload);
+                    if let Some(key) = &body.key {
+                        record = record.key(key);
+                    }
+                    if let Some(timestamp) = body.timestamp {
+                        record = record.timestamp(timestamp);
+                    }
+                    match producer.send(record, Duration::from_secs(0)).await {
                         Ok((partition, offset)) => {
                             info!(
                                 "Sent message to kafka, partition: {}, offset: {}",
@@ -184,15 +183,26 @@ impl Sender {
                           m.key(), payload, m.topic(), m.partition(), m.offset(), m.timestamp());
                     // send payload to receiver
                     let mut url = self.receiver_endpoint.clone();
-                    url.push_str(RECEIVER_RECEIVE_API);
+                    url.push_str(RECEIVER_KAFKA_RECEIVE_API);
                     match reqwest::ClientBuilder::new()
                         .build()
                         .unwrap()
                         .put(url)
                         .body(
-                            json!(ReceiverAPIBody {
+                            json!(KafkaReceiveBody {
                                 topic: m.topic().to_string(),
+                                key: match m.key() {
+                                    None => None,
+                                    Some(k) => match str::from_utf8(k) {
+                                        Ok(s) => Some(s.to_string()),
+                                        Err(e) => {
+                                            warn!("Error while deserializing message key: {:?}", e);
+                                            None
+                                        }
+                                    },
+                                },
                                 payload: payload.to_string(),
+                                timestamp: m.timestamp().to_millis(),
                             })
                             .to_string(),
                         )

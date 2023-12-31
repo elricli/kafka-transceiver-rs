@@ -34,7 +34,7 @@ $ cargo run -- sender --kafka-address localhost:9092 --kafka-topic test_topic --
 # Run help
 $ cargo run -- receiver --help
 # Run service
-$ cargo r -- receiver --kafka-address localhost:9092 --kafka-topic test_topic1 --port 8080
+$ cargo run -- receiver --kafka-address localhost:9092 --port 8080
 ```
 
 ## Architecture
