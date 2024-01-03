@@ -75,7 +75,7 @@ struct KafkaReceiveBody {
 impl Receiver {
     async fn receive_and_produce(&self) {
         let producer: FutureProducer = ClientConfig::new()
-            .set("bootstrap.servers", "localhost:9092")
+            .set("bootstrap.servers", &self.kafka_address)
             .set("message.timeout.ms", "5000")
             .set("client.id", "rdkafka-rs-receiver")
             .set_log_level(RDKafkaLogLevel::Error)
