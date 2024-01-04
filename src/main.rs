@@ -226,7 +226,14 @@ impl Sender {
                         .send()
                         .await
                     {
-                        Ok(_) => {}
+                        Ok(resp) => {
+                            if !resp.status().is_success() {
+                                error!(
+                                    "Error while sending message to receiver, status: {:?}, message: {:?}",
+                                    resp.status(), resp.text().await
+                                )
+                            }
+                        }
                         Err(e) => {
                             error!("Error while sending message to receiver: {:?}", e)
                         }
