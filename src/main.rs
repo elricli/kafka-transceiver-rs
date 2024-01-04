@@ -205,6 +205,7 @@ impl Sender {
                     match reqwest::Client::new()
                         .put(url)
                         .header("X-Api-Key", self.receiver_api_key.clone())
+                        .header("Content-Type", "application/json")
                         .body(
                             json!(KafkaReceiveBody {
                                 topic: m.topic().to_string(),
