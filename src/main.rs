@@ -1,9 +1,10 @@
 use axum::{
-    http::StatusCode,
+    http::{header, StatusCode},
     routing::{get, put},
     Json, Router,
 };
 use clap::{Args, Parser, Subcommand};
+use http::HeaderMap;
 use log::{error, info, warn};
 use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
@@ -58,7 +59,10 @@ pub struct Receiver {
     #[arg(long)]
     kafka_address: String,
 
-    #[arg(short, default_value_t = 8080)]
+    #[arg(long)]
+    api_key: String,
+
+    #[arg(short, long, default_value_t = 8080)]
     port: u16,
 }
 
@@ -82,36 +86,47 @@ impl Receiver {
             .create()
             .expect("Producer creation failed");
 
+        let api_key = self.api_key.clone();
+
         let app = Router::new()
             .route("/health", get(|| async { "OK" }))
             .route(
                 RECEIVER_KAFKA_RECEIVE_API,
-                put(|Json(body): Json<KafkaReceiveBody>| async move {
-                    info!("Received message: {:?}", body);
-                    let mut record = FutureRecord::to(&body.topic).payload(&body.payload);
-                    if let Some(key) = &body.key {
-                        record = record.key(key);
-                    }
-                    if let Some(timestamp) = body.timestamp {
-                        record = record.timestamp(timestamp);
-                    }
-                    match producer.send(record, Duration::from_secs(0)).await {
-                        Ok((partition, offset)) => {
-                            info!(
-                                "Sent message to kafka, partition: {}, offset: {}",
-                                partition, offset
-                            );
-                            return (StatusCode::OK, Json(()));
+                put(
+                    |headers: HeaderMap, Json(body): Json<KafkaReceiveBody>| async move {
+                        if let Some(v) = headers.get("x-api-key") {
+                            if !v.eq(&header::HeaderValue::from_str(&api_key).unwrap()) {
+                                return (StatusCode::UNAUTHORIZED, Json(()));
+                            }
+                        } else {
+                            return (StatusCode::UNAUTHORIZED, Json(()));
                         }
-                        Err((e, msg)) => {
-                            error!(
+                        info!("Received message: {:?}", body);
+                        let mut record = FutureRecord::to(&body.topic).payload(&body.payload);
+                        if let Some(key) = &body.key {
+                            record = record.key(key);
+                        }
+                        if let Some(timestamp) = body.timestamp {
+                            record = record.timestamp(timestamp);
+                        }
+                        match producer.send(record, Duration::from_secs(0)).await {
+                            Ok((partition, offset)) => {
+                                info!(
+                                    "Sent message to kafka, partition: {}, offset: {}",
+                                    partition, offset
+                                );
+                                return (StatusCode::OK, Json(()));
+                            }
+                            Err((e, msg)) => {
+                                error!(
                                 "Error while sending message to kafka, error: {:?}, message: {:?}",
                                 e, msg
                             );
-                            return (StatusCode::BAD_REQUEST, Json(()));
-                        }
-                    };
-                }),
+                                return (StatusCode::BAD_REQUEST, Json(()));
+                            }
+                        };
+                    },
+                ),
             );
 
         let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", self.port))
@@ -135,6 +150,9 @@ pub struct Sender {
 
     #[arg(long)]
     receiver_endpoint: String,
+
+    #[arg(long)]
+    receiver_api_key: String,
 }
 
 type LoggingConsumer = StreamConsumer<CustomContext>;
@@ -184,10 +202,9 @@ impl Sender {
                     // send payload to receiver
                     let mut url = self.receiver_endpoint.clone();
                     url.push_str(RECEIVER_KAFKA_RECEIVE_API);
-                    match reqwest::ClientBuilder::new()
-                        .build()
-                        .unwrap()
+                    match reqwest::Client::new()
                         .put(url)
+                        .header("X-Api-Key", self.receiver_api_key.clone())
                         .body(
                             json!(KafkaReceiveBody {
                                 topic: m.topic().to_string(),

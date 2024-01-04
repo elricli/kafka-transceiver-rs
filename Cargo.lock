@@ -667,6 +667,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "clap",
+ "http 1.0.0",
  "log",
  "pretty_env_logger",
  "rdkafka",
