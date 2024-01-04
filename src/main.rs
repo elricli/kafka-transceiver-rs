@@ -232,6 +232,8 @@ impl Sender {
                                     "Error while sending message to receiver, status: {:?}, message: {:?}",
                                     resp.status(), resp.text().await
                                 )
+                            } else {
+                                info!("Successfully sent message to receiver")
                             }
                         }
                         Err(e) => {
